@@ -6,30 +6,29 @@ const currencySymbols = { RUB: '₽', USD: '$', EUR: '€', KGS: 'с' };
 
 const monthsShortRu = ['янв', 'фев', 'мар', 'апр', 'май', 'июн', 'июл', 'авг', 'сен', 'окт', 'ноя', 'дек'];
 
-const pluralWeeks = (n) => {
+const pluralDays = (n) => {
   const m10 = n % 10;
   const m100 = n % 100;
-  if (m10 === 1 && m100 !== 11) return 'неделя';
-  if ([2, 3, 4].includes(m10) && ![12, 13, 14].includes(m100)) return 'недели';
-  return 'недель';
+  if (m10 === 1 && m100 !== 11) return 'день';
+  if ([2, 3, 4].includes(m10) && ![12, 13, 14].includes(m100)) return 'дня';
+  return 'дней';
 };
 
 const fmtNum = (n) => n.toLocaleString('ru-RU', { maximumFractionDigits: 0 });
 const fmtNum2 = (n) => n.toLocaleString('ru-RU', { maximumFractionDigits: 2 });
 
-function startOfWeek(d) {
+function startOfDay(d) {
   const date = new Date(d);
   date.setHours(0, 0, 0, 0);
-  const day = date.getDay();
-  const diff = day === 0 ? -6 : 1 - day;
-  date.setDate(date.getDate() + diff);
   return date;
 }
 
-const formatWeekLabel = (d) => `${d.getDate()} ${monthsShortRu[d.getMonth()]}`;
+const formatDayLabel = (d) => `${d.getDate()} ${monthsShortRu[d.getMonth()]}`;
+const formatDayShort = (d) => `${d.getDate()}`;
 
 const SVG_W = 600;
 const SVG_H = 130;
+const DAYS = 14;
 
 // motion presets — вынесены, чтобы избежать двойных фигурных в JSX
 const cardMotion = {
@@ -53,7 +52,7 @@ function makeBarMotion(i, targetY, targetHeight) {
   return {
     initial: { y: SVG_H, height: 0 },
     animate: { y: targetY, height: targetHeight },
-    transition: { duration: 0.8, delay: 0.1 + i * 0.07, ease: [0.16, 1, 0.3, 1] },
+    transition: { duration: 0.8, delay: 0.05 + i * 0.04, ease: [0.16, 1, 0.3, 1] },
   };
 }
 
@@ -69,8 +68,8 @@ export default function SavingsStats({ transactions = [], currency = 'RUB' }) {
         avgDeposit: 0,
         thisMonth: 0,
         prevMonth: 0,
-        weeks: [],
-        maxWeek: 0,
+        days: [],
+        maxDay: 0,
         streak: 0,
       };
     }
@@ -98,24 +97,25 @@ export default function SavingsStats({ transactions = [], currency = 'RUB' }) {
       .filter((t) => t.date.getMonth() === prevMonth && t.date.getFullYear() === prevYear)
       .reduce((s, t) => s + t.amount, 0);
 
-    const WEEKS = 8;
-    const weeks = [];
-    const startThisWeek = startOfWeek(now);
-    for (let i = WEEKS - 1; i >= 0; i--) {
-      const ws = new Date(startThisWeek);
-      ws.setDate(ws.getDate() - i * 7);
-      const we = new Date(ws);
-      we.setDate(we.getDate() + 7);
+    // Дневные бакеты: последние DAYS дней, включая сегодня
+    const days = [];
+    const today = startOfDay(now);
+    for (let i = DAYS - 1; i >= 0; i--) {
+      const ds = new Date(today);
+      ds.setDate(ds.getDate() - i);
+      const de = new Date(ds);
+      de.setDate(de.getDate() + 1);
       const sum = txs
-        .filter((t) => t.date >= ws && t.date < we)
+        .filter((t) => t.date >= ds && t.date < de)
         .reduce((s, t) => s + t.amount, 0);
-      weeks.push({ start: ws, amount: sum });
+      days.push({ start: ds, amount: sum });
     }
-    const maxWeek = Math.max(...weeks.map((w) => w.amount), 1);
+    const maxDay = Math.max(...days.map((d) => d.amount), 1);
 
+    // Серия в днях подряд с пополнением, считая от сегодня назад
     let streak = 0;
-    for (let i = weeks.length - 1; i >= 0; i--) {
-      if (weeks[i].amount > 0) streak++;
+    for (let i = days.length - 1; i >= 0; i--) {
+      if (days[i].amount > 0) streak++;
       else break;
     }
 
@@ -126,8 +126,8 @@ export default function SavingsStats({ transactions = [], currency = 'RUB' }) {
       avgDeposit,
       thisMonth: thisMonthTotal,
       prevMonth: prevMonthTotal,
-      weeks,
-      maxWeek,
+      days,
+      maxDay,
       streak,
     };
   }, [transactions]);
@@ -135,14 +135,14 @@ export default function SavingsStats({ transactions = [], currency = 'RUB' }) {
   const monthDelta = stats.thisMonth - stats.prevMonth;
   const chartKey = `${transactions.length}-${stats.total}-${stats.thisMonth}`;
 
-  // SVG-бары: предвычисляем геометрию
+  // SVG-бары
   const bars = useMemo(() => {
-    if (!stats.weeks.length || stats.maxWeek <= 0) return [];
-    const slotW = SVG_W / stats.weeks.length;
-    const barWidth = slotW * 0.62;
-    return stats.weeks.map((w, i) => {
-      const rawH = (w.amount / stats.maxWeek) * (SVG_H - 6);
-      const barHeight = w.amount > 0 ? Math.max(6, rawH) : 4;
+    if (!stats.days.length || stats.maxDay <= 0) return [];
+    const slotW = SVG_W / stats.days.length;
+    const barWidth = slotW * 0.6;
+    return stats.days.map((d, i) => {
+      const rawH = (d.amount / stats.maxDay) * (SVG_H - 6);
+      const barHeight = d.amount > 0 ? Math.max(6, rawH) : 4;
       const barY = SVG_H - barHeight;
       const barX = i * slotW + (slotW - barWidth) / 2;
       return {
@@ -150,18 +150,17 @@ export default function SavingsStats({ transactions = [], currency = 'RUB' }) {
         y: barY,
         width: barWidth,
         height: barHeight,
-        amount: w.amount,
-        isActive: w.amount > 0,
+        amount: d.amount,
+        isActive: d.amount > 0,
       };
     });
-  }, [stats.weeks, stats.maxWeek]);
+  }, [stats.days, stats.maxDay]);
 
-  // Сетка для дат под графиком
   const dateGridStyle = useMemo(
     () => ({
-      gridTemplateColumns: `repeat(${stats.weeks.length || 8}, minmax(0, 1fr))`,
+      gridTemplateColumns: `repeat(${stats.days.length || DAYS}, minmax(0, 1fr))`,
     }),
-    [stats.weeks.length],
+    [stats.days.length],
   );
 
   return (
@@ -178,7 +177,7 @@ export default function SavingsStats({ transactions = [], currency = 'RUB' }) {
         </div>
         <div>
           <h2 className="text-xl md:text-2xl font-display font-bold">Активность</h2>
-          <p className="text-sm text-gray-400">Динамика по неделям и личные рекорды</p>
+          <p className="text-sm text-gray-400">Динамика по дням и личные рекорды</p>
         </div>
       </div>
 
@@ -207,7 +206,7 @@ export default function SavingsStats({ transactions = [], currency = 'RUB' }) {
         <MiniStat
           icon={<Flame className="w-4 h-4 text-secondary" />}
           label="Серия"
-          value={stats.streak > 0 ? `${stats.streak} ${pluralWeeks(stats.streak)}` : '—'}
+          value={stats.streak > 0 ? `${stats.streak} ${pluralDays(stats.streak)}` : '—'}
           sub="подряд с пополнением"
           swapKey={`s-${stats.streak}`}
         />
@@ -217,11 +216,11 @@ export default function SavingsStats({ transactions = [], currency = 'RUB' }) {
         <div className="flex items-center justify-between mb-3">
           <span className="text-sm font-semibold text-gray-300 flex items-center gap-2">
             <CalendarDays className="w-4 h-4 text-accent" />
-            Последние 8 недель
+            Последние {DAYS} дней
           </span>
-          {stats.maxWeek > 0 && (
+          {stats.maxDay > 0 && (
             <span className="text-xs text-gray-500">
-              Макс: {fmtNum(stats.maxWeek)} {symbol}
+              Макс за день: {fmtNum(stats.maxDay)} {symbol}
             </span>
           )}
         </div>
@@ -260,25 +259,29 @@ export default function SavingsStats({ transactions = [], currency = 'RUB' }) {
                   filter={b.isActive ? 'url(#barGlow)' : undefined}
                   {...makeBarMotion(i, b.y, b.height)}
                 >
-                  <title>{`${formatWeekLabel(stats.weeks[i].start)}: ${fmtNum2(b.amount)} ${symbol}`}</title>
+                  <title>{`${formatDayLabel(stats.days[i].start)}: ${fmtNum2(b.amount)} ${symbol}`}</title>
                 </motion.rect>
               ))}
             </motion.svg>
 
             <div className="grid mt-1.5" style={dateGridStyle}>
-              {stats.weeks.map((w, i) => (
-                <span
-                  key={`lbl-${i}`}
-                  className="text-[10px] text-gray-500 text-center truncate"
-                >
-                  {formatWeekLabel(w.start)}
-                </span>
-              ))}
+              {stats.days.map((d, i) => {
+                // Первый, последний и каждый второй — с месяцем, остальные только число
+                const showMonth = i === 0 || i === stats.days.length - 1 || d.start.getDate() === 1 || i % 3 === 0;
+                return (
+                  <span
+                    key={`lbl-${i}`}
+                    className="text-[9px] text-gray-500 text-center truncate"
+                  >
+                    {showMonth ? formatDayLabel(d.start) : formatDayShort(d.start)}
+                  </span>
+                );
+              })}
             </div>
           </>
         ) : (
           <div className="h-28 flex items-center justify-center text-gray-500 text-sm border border-primary/10 rounded-2xl">
-            Пополни копилку — появится график по неделям
+            Пополни копилку — появится график по дням
           </div>
         )}
       </div>
