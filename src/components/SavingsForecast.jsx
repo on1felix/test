@@ -10,8 +10,6 @@ const monthsRu = [
   'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря',
 ];
 
-const formatDateRu = (d) => `${d.getDate()} ${monthsRu[d.getMonth()]} ${d.getFullYear()}`;
-
 const pluralDays = (n) => {
   const m10 = n % 10;
   const m100 = n % 100;
@@ -224,11 +222,16 @@ export default function SavingsForecast({
 
   const chartKey = `${transactions.length}-${currentAmount}-${targetAmount}`;
 
-  const etaText = forecast.done
+  // ETA — день числом через CountUp, месяц и год как суффикс
+  const etaDay =
+    forecast.eta && !forecast.done ? forecast.eta.getDate() : null;
+  const etaSuffix =
+    forecast.eta && !forecast.done
+      ? ` ${monthsRu[forecast.eta.getMonth()]} ${forecast.eta.getFullYear()}`
+      : '';
+  const etaFallback = forecast.done
     ? 'Уже достигнута 🎉'
-    : forecast.eta
-      ? formatDateRu(forecast.eta)
-      : 'Недостаточно данных';
+    : 'Недостаточно данных';
 
   const intervalNum =
     forecast.avgInterval > 0 && forecast.avgInterval >= 1 ? forecast.avgInterval : null;
@@ -272,8 +275,10 @@ export default function SavingsForecast({
         <Stat
           icon={<CalendarClock className="w-4 h-4 text-accent" />}
           label="Цель будет достигнута"
-          textValue={etaText}
-          swapKey={etaText}
+          numValue={etaDay}
+          numSuffix={etaSuffix}
+          textValue={etaFallback}
+          swapKey={etaFallback}
           highlight
         />
         <Stat
