@@ -29,11 +29,16 @@ const pluralDeposits = (n) => {
 
 const fmtNum = (n) => n.toLocaleString('ru-RU', { maximumFractionDigits: 2 });
 
-// motion presets (вынесены, чтобы избежать   в JSX)
+// motion presets вынесены в константы, чтобы избежать двойных фигурных в JSX
 const cardMotion = {
   initial: { opacity: 0, y: 20 },
   animate: { opacity: 1, y: 0 },
   transition: { duration: 0.5, delay: 0.15 },
+};
+const svgMotion = {
+  initial: { opacity: 0 },
+  animate: { opacity: 1 },
+  transition: { duration: 0.3 },
 };
 const lineMotion = {
   initial: { pathLength: 0, opacity: 0 },
@@ -63,12 +68,12 @@ const valueSwap = {
 };
 
 const hoverLift = { y: -2 };
+const hoverTransition = { duration: 0.2 };
 
 const legendDashStyle = {
   backgroundImage: 'repeating-linear-gradient(90deg, #00D9FF 0 4px, transparent 4px 8px)',
 };
 
-// Связь история + частота пополнений
 function computeForecast(transactions, currentAmount, targetAmount) {
   const remaining = Math.max(0, targetAmount - currentAmount);
   const done = targetAmount > 0 && currentAmount >= targetAmount;
@@ -91,7 +96,6 @@ function computeForecast(transactions, currentAmount, targetAmount) {
     .map((t) => ({ amount: parseFloat(t.amount), date: new Date(t.created_at) }))
     .sort((a, b) => a.date - b.date);
 
-  // Взвешенный средний размер пополнения (больше веса у последних)
   let wSum = 0;
   let wAmt = 0;
   sorted.forEach((t, i) => {
@@ -101,7 +105,6 @@ function computeForecast(transactions, currentAmount, targetAmount) {
   });
   const avgDeposit = wAmt / wSum;
 
-  // Интервалы (в днях) между пополнениями — тоже взвешенно
   const intervals = [];
   for (let i = 1; i < sorted.length; i++) {
     intervals.push((sorted[i].date - sorted[i - 1].date) / 86400000);
@@ -125,15 +128,9 @@ function computeForecast(transactions, currentAmount, targetAmount) {
   }
 
   const avgPerDay = avgDeposit / avgInterval;
-
-  // Сколько пополнений осталось
   const depositsLeft = Math.ceil(remaining / avgDeposit);
-
-  // Дни до следующего пополнения — учитываем, сколько уже прошло с последнего
   const daysSinceLast = (Date.now() - sorted[sorted.length - 1].date.getTime()) / 86400000;
   const daysUntilNext = Math.max(0, avgInterval - Math.max(0, daysSinceLast));
-
-  // Итого: до следующего + (depositsLeft - 1) интервалов
   const daysLeft = Math.ceil(daysUntilNext + Math.max(0, depositsLeft - 1) * avgInterval);
   const eta = new Date(Date.now() + daysLeft * 86400000);
 
@@ -147,7 +144,6 @@ function buildChart(transactions, currentAmount, targetAmount, forecast) {
 
   if (!sorted.length) return null;
 
-  // Кумулятивная история
   let cum = 0;
   const hist = [{ x: sorted[0].time, y: 0 }];
   sorted.forEach((t) => {
@@ -158,13 +154,11 @@ function buildChart(transactions, currentAmount, targetAmount, forecast) {
     hist.push({ x: Date.now(), y: currentAmount });
   }
 
-  // Прогноз — ступеньками по размеру и интервалу пополнений
   const proj = [];
   if (forecast.eta && !forecast.done && forecast.depositsLeft && forecast.avgDeposit > 0) {
     let y = currentAmount;
     let t = Date.now() + forecast.daysUntilNext * 86400000;
     proj.push({ x: Date.now(), y });
-    // Ограничиваем число ступенек для читаемости
     const maxSteps = Math.min(forecast.depositsLeft, 40);
     for (let i = 0; i < maxSteps; i++) {
       proj.push({ x: t, y });
@@ -174,7 +168,6 @@ function buildChart(transactions, currentAmount, targetAmount, forecast) {
       t += forecast.avgInterval * 86400000;
       if (y >= targetAmount) break;
     }
-    // Гарантируем финальную точку на ETA
     if (proj[proj.length - 1].x < forecast.eta.getTime()) {
       proj.push({ x: forecast.eta.getTime(), y: targetAmount });
     }
@@ -229,7 +222,6 @@ export default function SavingsForecast({
     [transactions, currentAmount, targetAmount, forecast],
   );
 
-  // Ключ для ре-анимации при любом изменении баланса/истории
   const chartKey = `${transactions.length}-${currentAmount}-${targetAmount}`;
 
   const etaText = forecast.done
@@ -304,9 +296,7 @@ export default function SavingsForecast({
             viewBox={`0 0 ${svg.W} ${svg.H}`}
             className="w-full h-44"
             preserveAspectRatio="none"
-            initial= opacity: 0 
-            animate= opacity: 1 
-            transition= duration: 0.3 
+            {...svgMotion}
           >
             <defs>
               <linearGradient id="fcArea" x1="0" y1="0" x2="0" y2="1">
@@ -418,7 +408,7 @@ function Stat({ icon, label, value, sub, highlight, swapKey }) {
   return (
     <motion.div
       whileHover={hoverLift}
-      transition= duration: 0.2 
+      transition={hoverTransition}
       className={`relative bg-dark-light/40 backdrop-blur-sm border rounded-2xl p-4 transition-colors ${
         highlight ? 'border-primary/40' : 'border-primary/10 hover:border-primary/30'
       }`}
