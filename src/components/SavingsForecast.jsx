@@ -278,7 +278,7 @@ export default function SavingsForecast({
           numValue={etaDay}
           numSuffix={etaSuffix}
           textValue={etaFallback}
-          swapKey={etaFallback}
+          swapKey={`eta-${etaDay ?? 'na'}-${etaSuffix}-${etaFallback}`}
           highlight
         />
         <Stat
@@ -290,7 +290,7 @@ export default function SavingsForecast({
           numDecimals={1}
           textValue={intervalFallback}
           sub={forecast.avgDeposit > 0 ? `~${fmtNum(forecast.avgDeposit)} ${symbol} за раз` : null}
-          swapKey={intervalFallback}
+          swapKey={`freq-${intervalNum ?? 'na'}-${forecast.avgDeposit}`}
         />
         <Stat
           icon={<Target className="w-4 h-4 text-success" />}
@@ -303,7 +303,7 @@ export default function SavingsForecast({
               ? `~${forecast.depositsLeft} ${pluralDeposits(forecast.depositsLeft)} · ${fmtNum(forecast.remaining)} ${symbol}`
               : null
           }
-          swapKey={`${forecast.daysLeft}-${forecast.depositsLeft}`}
+          swapKey={`left-${forecast.daysLeft}-${forecast.depositsLeft}-${forecast.remaining}`}
         />
       </div>
 
