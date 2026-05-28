@@ -1,6 +1,7 @@
 import { useMemo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { TrendingUp, CalendarClock, Zap, Sparkles, Target, Repeat } from 'lucide-react';
+import CountUp from './CountUp';
 
 const currencySymbols = { RUB: '₽', USD: '$', EUR: '€', KGS: 'с' };
 
@@ -29,7 +30,6 @@ const pluralDeposits = (n) => {
 
 const fmtNum = (n) => n.toLocaleString('ru-RU', { maximumFractionDigits: 2 });
 
-// motion presets вынесены в константы, чтобы избежать двойных фигурных в JSX
 const cardMotion = {
   initial: { opacity: 0, y: 20 },
   animate: { opacity: 1, y: 0 },
@@ -230,11 +230,24 @@ export default function SavingsForecast({
       ? formatDateRu(forecast.eta)
       : 'Недостаточно данных';
 
-  const intervalText =
-    forecast.avgInterval > 0
-      ? forecast.avgInterval >= 1
-        ? `каждые ~${forecast.avgInterval.toFixed(1)} ${pluralDays(Math.round(forecast.avgInterval))}`
-        : 'несколько раз в день'
+  const intervalNum =
+    forecast.avgInterval > 0 && forecast.avgInterval >= 1 ? forecast.avgInterval : null;
+  const intervalFallback =
+    forecast.avgInterval > 0 && forecast.avgInterval < 1
+      ? 'несколько раз в день'
+      : '—';
+  const intervalRoundedPlural = pluralDays(
+    intervalNum != null ? Math.max(1, Math.round(intervalNum)) : 1,
+  );
+
+  const daysNum =
+    !forecast.done && forecast.daysLeft != null && forecast.daysLeft > 0
+      ? forecast.daysLeft
+      : null;
+  const daysFallback = forecast.done
+    ? 'Готово!'
+    : forecast.daysLeft === 0
+      ? '0'
       : '—';
 
   return (
@@ -259,27 +272,27 @@ export default function SavingsForecast({
         <Stat
           icon={<CalendarClock className="w-4 h-4 text-accent" />}
           label="Цель будет достигнута"
-          value={etaText}
+          textValue={etaText}
           swapKey={etaText}
           highlight
         />
         <Stat
           icon={<Repeat className="w-4 h-4 text-primary" />}
           label="Частота пополнений"
-          value={intervalText}
+          numValue={intervalNum}
+          numPrefix="каждые ~"
+          numSuffix={` ${intervalRoundedPlural}`}
+          numDecimals={1}
+          textValue={intervalFallback}
           sub={forecast.avgDeposit > 0 ? `~${fmtNum(forecast.avgDeposit)} ${symbol} за раз` : null}
-          swapKey={intervalText}
+          swapKey={intervalFallback}
         />
         <Stat
           icon={<Target className="w-4 h-4 text-success" />}
           label={forecast.done ? 'Поздравляю!' : 'Осталось'}
-          value={
-            forecast.done
-              ? '0'
-              : forecast.daysLeft != null
-                ? `${forecast.daysLeft} ${pluralDays(forecast.daysLeft)}`
-                : '—'
-          }
+          numValue={daysNum}
+          numSuffix={daysNum != null ? ` ${pluralDays(daysNum)}` : ''}
+          textValue={daysFallback}
           sub={
             !forecast.done && forecast.depositsLeft != null && forecast.depositsLeft > 0
               ? `~${forecast.depositsLeft} ${pluralDeposits(forecast.depositsLeft)} · ${fmtNum(forecast.remaining)} ${symbol}`
@@ -404,7 +417,19 @@ export default function SavingsForecast({
   );
 }
 
-function Stat({ icon, label, value, sub, highlight, swapKey }) {
+function Stat({
+  icon,
+  label,
+  numValue,
+  numPrefix,
+  numSuffix,
+  numDecimals,
+  textValue,
+  sub,
+  highlight,
+  swapKey,
+}) {
+  const useNumeric = numValue != null && numValue > 0;
   return (
     <motion.div
       whileHover={hoverLift}
@@ -417,17 +442,31 @@ function Stat({ icon, label, value, sub, highlight, swapKey }) {
         {icon}
         <span>{label}</span>
       </div>
-      <AnimatePresence mode="wait">
-        <motion.div
-          key={swapKey || value}
-          {...valueSwap}
-          className={`text-base md:text-lg font-display font-semibold ${
-            highlight ? 'text-gradient' : 'text-white'
-          }`}
-        >
-          {value}
-        </motion.div>
-      </AnimatePresence>
+      <div
+        className={`text-base md:text-lg font-display font-semibold ${
+          highlight ? 'text-gradient' : 'text-white'
+        }`}
+      >
+        {useNumeric ? (
+          <CountUp
+            end={numValue}
+            duration={1.2}
+            prefix={numPrefix || ''}
+            suffix={numSuffix || ''}
+            decimals={numDecimals || 0}
+          />
+        ) : (
+          <AnimatePresence mode="wait">
+            <motion.span
+              key={swapKey || textValue}
+              {...valueSwap}
+              className="inline-block"
+            >
+              {textValue}
+            </motion.span>
+          </AnimatePresence>
+        )}
+      </div>
       {sub && (
         <AnimatePresence mode="wait">
           <motion.div
