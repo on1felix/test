@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
-import { motion } from 'motion/react';
-import { TrendingUp, CalendarClock, Zap, Sparkles, Target } from 'lucide-react';
+import { motion, AnimatePresence } from 'motion/react';
+import { TrendingUp, CalendarClock, Zap, Sparkles, Target, Repeat } from 'lucide-react';
 
 const currencySymbols = { RUB: '₽', USD: '$', EUR: '€', KGS: 'с' };
 
@@ -9,42 +9,207 @@ const monthsRu = [
   'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря',
 ];
 
-function formatDateRu(d) {
-  return `${d.getDate()} ${monthsRu[d.getMonth()]} ${d.getFullYear()}`;
-}
+const formatDateRu = (d) => `${d.getDate()} ${monthsRu[d.getMonth()]} ${d.getFullYear()}`;
 
-function pluralDays(n) {
+const pluralDays = (n) => {
   const m10 = n % 10;
   const m100 = n % 100;
   if (m10 === 1 && m100 !== 11) return 'день';
   if ([2, 3, 4].includes(m10) && ![12, 13, 14].includes(m100)) return 'дня';
   return 'дней';
-}
+};
 
+const pluralDeposits = (n) => {
+  const m10 = n % 10;
+  const m100 = n % 100;
+  if (m10 === 1 && m100 !== 11) return 'пополнение';
+  if ([2, 3, 4].includes(m10) && ![12, 13, 14].includes(m100)) return 'пополнения';
+  return 'пополнений';
+};
+
+const fmtNum = (n) => n.toLocaleString('ru-RU', { maximumFractionDigits: 2 });
+
+// motion presets (вынесены, чтобы избежать   в JSX)
 const cardMotion = {
   initial: { opacity: 0, y: 20 },
   animate: { opacity: 1, y: 0 },
   transition: { duration: 0.5, delay: 0.15 },
 };
-
 const lineMotion = {
-  initial: { pathLength: 0 },
-  animate: { pathLength: 1 },
-  transition: { duration: 1.2, ease: 'easeOut' },
+  initial: { pathLength: 0, opacity: 0 },
+  animate: { pathLength: 1, opacity: 1 },
+  transition: { duration: 1.0, ease: 'easeOut' },
 };
-
-const projMotion = {
+const areaMotion = {
   initial: { opacity: 0 },
   animate: { opacity: 1 },
-  transition: { duration: 0.8, delay: 0.6 },
+  transition: { duration: 0.8, delay: 0.2 },
+};
+const projMotion = {
+  initial: { pathLength: 0, opacity: 0 },
+  animate: { pathLength: 1, opacity: 1 },
+  transition: { duration: 1.1, delay: 0.4, ease: 'easeOut' },
+};
+const dotMotion = {
+  initial: { scale: 0, opacity: 0 },
+  animate: { scale: 1, opacity: 1 },
+  transition: { type: 'spring', stiffness: 220, damping: 18, delay: 1.2 },
+};
+const valueSwap = {
+  initial: { opacity: 0, y: 8 },
+  animate: { opacity: 1, y: 0 },
+  exit: { opacity: 0, y: -8 },
+  transition: { duration: 0.35 },
 };
 
 const hoverLift = { y: -2 };
 
 const legendDashStyle = {
-  backgroundImage:
-    'repeating-linear-gradient(90deg, #00D9FF 0 4px, transparent 4px 8px)',
+  backgroundImage: 'repeating-linear-gradient(90deg, #00D9FF 0 4px, transparent 4px 8px)',
 };
+
+// Связь история + частота пополнений
+function computeForecast(transactions, currentAmount, targetAmount) {
+  const remaining = Math.max(0, targetAmount - currentAmount);
+  const done = targetAmount > 0 && currentAmount >= targetAmount;
+
+  if (!transactions.length || done) {
+    return {
+      remaining,
+      done,
+      avgDeposit: 0,
+      avgInterval: 0,
+      avgPerDay: 0,
+      daysLeft: done ? 0 : null,
+      depositsLeft: done ? 0 : null,
+      daysUntilNext: 0,
+      eta: done ? new Date() : null,
+    };
+  }
+
+  const sorted = [...transactions]
+    .map((t) => ({ amount: parseFloat(t.amount), date: new Date(t.created_at) }))
+    .sort((a, b) => a.date - b.date);
+
+  // Взвешенный средний размер пополнения (больше веса у последних)
+  let wSum = 0;
+  let wAmt = 0;
+  sorted.forEach((t, i) => {
+    const w = i + 1;
+    wSum += w;
+    wAmt += t.amount * w;
+  });
+  const avgDeposit = wAmt / wSum;
+
+  // Интервалы (в днях) между пополнениями — тоже взвешенно
+  const intervals = [];
+  for (let i = 1; i < sorted.length; i++) {
+    intervals.push((sorted[i].date - sorted[i - 1].date) / 86400000);
+  }
+  let avgInterval;
+  if (intervals.length === 0) {
+    avgInterval = Math.max(1, (Date.now() - sorted[0].date.getTime()) / 86400000);
+  } else {
+    let iwSum = 0;
+    let iwVal = 0;
+    intervals.forEach((iv, i) => {
+      const w = i + 1;
+      iwSum += w;
+      iwVal += iv * w;
+    });
+    avgInterval = Math.max(0.5, iwVal / iwSum);
+  }
+
+  if (avgDeposit <= 0) {
+    return { remaining, done, avgDeposit: 0, avgInterval, avgPerDay: 0, daysLeft: null, depositsLeft: null, daysUntilNext: 0, eta: null };
+  }
+
+  const avgPerDay = avgDeposit / avgInterval;
+
+  // Сколько пополнений осталось
+  const depositsLeft = Math.ceil(remaining / avgDeposit);
+
+  // Дни до следующего пополнения — учитываем, сколько уже прошло с последнего
+  const daysSinceLast = (Date.now() - sorted[sorted.length - 1].date.getTime()) / 86400000;
+  const daysUntilNext = Math.max(0, avgInterval - Math.max(0, daysSinceLast));
+
+  // Итого: до следующего + (depositsLeft - 1) интервалов
+  const daysLeft = Math.ceil(daysUntilNext + Math.max(0, depositsLeft - 1) * avgInterval);
+  const eta = new Date(Date.now() + daysLeft * 86400000);
+
+  return { remaining, done, avgDeposit, avgInterval, avgPerDay, depositsLeft, daysUntilNext, daysLeft, eta };
+}
+
+function buildChart(transactions, currentAmount, targetAmount, forecast) {
+  const sorted = [...transactions]
+    .map((t) => ({ amount: parseFloat(t.amount), time: new Date(t.created_at).getTime() }))
+    .sort((a, b) => a.time - b.time);
+
+  if (!sorted.length) return null;
+
+  // Кумулятивная история
+  let cum = 0;
+  const hist = [{ x: sorted[0].time, y: 0 }];
+  sorted.forEach((t) => {
+    cum += t.amount;
+    hist.push({ x: t.time, y: cum });
+  });
+  if (Math.abs(hist[hist.length - 1].y - currentAmount) > 0.01) {
+    hist.push({ x: Date.now(), y: currentAmount });
+  }
+
+  // Прогноз — ступеньками по размеру и интервалу пополнений
+  const proj = [];
+  if (forecast.eta && !forecast.done && forecast.depositsLeft && forecast.avgDeposit > 0) {
+    let y = currentAmount;
+    let t = Date.now() + forecast.daysUntilNext * 86400000;
+    proj.push({ x: Date.now(), y });
+    // Ограничиваем число ступенек для читаемости
+    const maxSteps = Math.min(forecast.depositsLeft, 40);
+    for (let i = 0; i < maxSteps; i++) {
+      proj.push({ x: t, y });
+      const next = Math.min(targetAmount, y + forecast.avgDeposit);
+      y = next;
+      proj.push({ x: t, y });
+      t += forecast.avgInterval * 86400000;
+      if (y >= targetAmount) break;
+    }
+    // Гарантируем финальную точку на ETA
+    if (proj[proj.length - 1].x < forecast.eta.getTime()) {
+      proj.push({ x: forecast.eta.getTime(), y: targetAmount });
+    }
+  }
+
+  const all = [...hist, ...proj];
+  const minX = Math.min(...all.map((p) => p.x));
+  const maxX = Math.max(...all.map((p) => p.x), minX + 86400000);
+  const maxY = Math.max(targetAmount, ...all.map((p) => p.y), 1);
+
+  const W = 600;
+  const H = 180;
+  const PAD_X = 12;
+  const PAD_Y = 14;
+
+  const sx = (x) => PAD_X + ((x - minX) / (maxX - minX)) * (W - PAD_X * 2);
+  const sy = (y) => H - PAD_Y - (y / maxY) * (H - PAD_Y * 2);
+
+  const buildPath = (pts) =>
+    pts.map((p, i) => `${i ? 'L' : 'M'} ${sx(p.x).toFixed(1)} ${sy(p.y).toFixed(1)}`).join(' ');
+
+  const histPath = buildPath(hist);
+  const projPath = proj.length ? buildPath(proj) : '';
+  const areaPath =
+    hist.length > 1
+      ? `${histPath} L ${sx(hist[hist.length - 1].x).toFixed(1)} ${sy(0).toFixed(1)} L ${sx(hist[0].x).toFixed(1)} ${sy(0).toFixed(1)} Z`
+      : '';
+
+  const targetY = sy(targetAmount);
+  const etaPoint = forecast.eta
+    ? { x: sx(forecast.eta.getTime()), y: sy(targetAmount) }
+    : null;
+
+  return { W, H, histPath, projPath, areaPath, targetY, etaPoint };
+}
 
 export default function SavingsForecast({
   transactions = [],
@@ -54,94 +219,36 @@ export default function SavingsForecast({
 }) {
   const symbol = currencySymbols[currency] || '₽';
 
-  const { avgPerDay, daysLeft, eta, remaining, done } = useMemo(() => {
-    const remaining = Math.max(0, targetAmount - currentAmount);
-    const done = targetAmount > 0 && currentAmount >= targetAmount;
+  const forecast = useMemo(
+    () => computeForecast(transactions, currentAmount, targetAmount),
+    [transactions, currentAmount, targetAmount],
+  );
 
-    if (!transactions.length || done) {
-      return {
-        avgPerDay: 0,
-        daysLeft: done ? 0 : null,
-        eta: done ? new Date() : null,
-        remaining,
-        done,
-      };
-    }
+  const svg = useMemo(
+    () => buildChart(transactions, currentAmount, targetAmount, forecast),
+    [transactions, currentAmount, targetAmount, forecast],
+  );
 
-    const sorted = [...transactions]
-      .map((t) => ({ amount: parseFloat(t.amount), date: new Date(t.created_at) }))
-      .sort((a, b) => a.date - b.date);
+  // Ключ для ре-анимации при любом изменении баланса/истории
+  const chartKey = `${transactions.length}-${currentAmount}-${targetAmount}`;
 
-    const total = sorted.reduce((s, t) => s + t.amount, 0);
-    const firstDate = sorted[0].date;
-    const days = Math.max(1, Math.round((Date.now() - firstDate.getTime()) / 86400000));
-    const avg = total / days;
+  const etaText = forecast.done
+    ? 'Уже достигнута 🎉'
+    : forecast.eta
+      ? formatDateRu(forecast.eta)
+      : 'Недостаточно данных';
 
-    if (avg <= 0) {
-      return { avgPerDay: 0, daysLeft: null, eta: null, remaining, done };
-    }
-
-    const dLeft = Math.ceil(remaining / avg);
-    const eta = new Date(Date.now() + dLeft * 86400000);
-
-    return { avgPerDay: avg, daysLeft: dLeft, eta, remaining, done };
-  }, [transactions, currentAmount, targetAmount]);
-
-  const svg = useMemo(() => {
-    const sorted = [...transactions]
-      .map((t) => ({ amount: parseFloat(t.amount), time: new Date(t.created_at).getTime() }))
-      .sort((a, b) => a.time - b.time);
-
-    if (!sorted.length) return null;
-
-    let cum = 0;
-    const hist = [{ x: sorted[0].time, y: 0 }];
-    sorted.forEach((t) => {
-      cum += t.amount;
-      hist.push({ x: t.time, y: cum });
-    });
-
-    if (Math.abs(hist[hist.length - 1].y - currentAmount) > 0.01) {
-      hist.push({ x: Date.now(), y: currentAmount });
-    }
-
-    const proj =
-      eta && !done
-        ? [
-            { x: Date.now(), y: currentAmount },
-            { x: eta.getTime(), y: targetAmount },
-          ]
-        : [];
-
-    const all = [...hist, ...proj];
-    const minX = Math.min(...all.map((p) => p.x));
-    const maxX = Math.max(...all.map((p) => p.x), minX + 86400000);
-    const maxY = Math.max(targetAmount, ...all.map((p) => p.y), 1);
-
-    const W = 600;
-    const H = 160;
-    const PAD = 10;
-
-    const sx = (x) => PAD + ((x - minX) / (maxX - minX)) * (W - PAD * 2);
-    const sy = (y) => H - PAD - (y / maxY) * (H - PAD * 2);
-
-    const buildPath = (pts) =>
-      pts.map((p, i) => `${i ? 'L' : 'M'} ${sx(p.x).toFixed(1)} ${sy(p.y).toFixed(1)}`).join(' ');
-
-    const histPath = buildPath(hist);
-    const projPath = proj.length ? buildPath(proj) : '';
-    const areaPath =
-      hist.length > 1
-        ? `${histPath} L ${sx(hist[hist.length - 1].x).toFixed(1)} ${sy(0).toFixed(1)} L ${sx(hist[0].x).toFixed(1)} ${sy(0).toFixed(1)} Z`
-        : '';
-
-    return { W, H, histPath, projPath, areaPath, targetY: sy(targetAmount) };
-  }, [transactions, currentAmount, targetAmount, eta, done]);
+  const intervalText =
+    forecast.avgInterval > 0
+      ? forecast.avgInterval >= 1
+        ? `каждые ~${forecast.avgInterval.toFixed(1)} ${pluralDays(Math.round(forecast.avgInterval))}`
+        : 'несколько раз в день'
+      : '—';
 
   return (
     <motion.div
       {...cardMotion}
-      className="relative overflow-hidden backdrop-blur-sm border-2 border-primary/20 rounded-3xl p-5 md:p-7 mb-5"
+      className="relative overflow-hidden backdrop-blur-sm bg-dark-light/30 border-2 border-primary/20 rounded-3xl p-5 md:p-7"
     >
       <div className="pointer-events-none absolute -top-32 -right-32 w-72 h-72 bg-accent/20 rounded-full blur-3xl" />
       <div className="pointer-events-none absolute -bottom-32 -left-32 w-72 h-72 bg-secondary/15 rounded-full blur-3xl" />
@@ -152,7 +259,7 @@ export default function SavingsForecast({
         </div>
         <div>
           <h2 className="text-xl md:text-2xl font-display font-bold">Прогноз цели</h2>
-          <p className="text-sm text-gray-400">На основе истории твоих пополнений</p>
+          <p className="text-sm text-gray-400">История + частота твоих пополнений</p>
         </div>
       </div>
 
@@ -160,36 +267,50 @@ export default function SavingsForecast({
         <Stat
           icon={<CalendarClock className="w-4 h-4 text-accent" />}
           label="Цель будет достигнута"
-          value={done ? 'Уже достигнута 🎉' : eta ? formatDateRu(eta) : 'Недостаточно данных'}
+          value={etaText}
+          swapKey={etaText}
           highlight
         />
         <Stat
-          icon={<Zap className="w-4 h-4 text-primary" />}
-          label="В среднем за день"
-          value={
-            avgPerDay > 0
-              ? `${avgPerDay.toLocaleString('ru-RU', { maximumFractionDigits: 2 })} ${symbol}`
-              : '—'
-          }
+          icon={<Repeat className="w-4 h-4 text-primary" />}
+          label="Частота пополнений"
+          value={intervalText}
+          sub={forecast.avgDeposit > 0 ? `~${fmtNum(forecast.avgDeposit)} ${symbol} за раз` : null}
+          swapKey={intervalText}
         />
         <Stat
           icon={<Target className="w-4 h-4 text-success" />}
-          label={done ? 'Поздравляю!' : 'Осталось накопить'}
-          value={done ? '0' : daysLeft != null ? `${daysLeft} ${pluralDays(daysLeft)}` : '—'}
+          label={forecast.done ? 'Поздравляю!' : 'Осталось'}
+          value={
+            forecast.done
+              ? '0'
+              : forecast.daysLeft != null
+                ? `${forecast.daysLeft} ${pluralDays(forecast.daysLeft)}`
+                : '—'
+          }
           sub={
-            !done && remaining > 0
-              ? `${remaining.toLocaleString('ru-RU', { maximumFractionDigits: 2 })} ${symbol}`
+            !forecast.done && forecast.depositsLeft != null && forecast.depositsLeft > 0
+              ? `~${forecast.depositsLeft} ${pluralDeposits(forecast.depositsLeft)} · ${fmtNum(forecast.remaining)} ${symbol}`
               : null
           }
+          swapKey={`${forecast.daysLeft}-${forecast.depositsLeft}`}
         />
       </div>
 
       <div className="relative">
         {svg ? (
-          <svg viewBox={`0 0 ${svg.W} ${svg.H}`} className="w-full h-40" preserveAspectRatio="none">
+          <motion.svg
+            key={chartKey}
+            viewBox={`0 0 ${svg.W} ${svg.H}`}
+            className="w-full h-44"
+            preserveAspectRatio="none"
+            initial= opacity: 0 
+            animate= opacity: 1 
+            transition= duration: 0.3 
+          >
             <defs>
               <linearGradient id="fcArea" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stopColor="#6C63FF" stopOpacity="0.5" />
+                <stop offset="0%" stopColor="#6C63FF" stopOpacity="0.55" />
                 <stop offset="100%" stopColor="#6C63FF" stopOpacity="0" />
               </linearGradient>
               <linearGradient id="fcLine" x1="0" y1="0" x2="1" y2="0">
@@ -197,6 +318,13 @@ export default function SavingsForecast({
                 <stop offset="50%" stopColor="#00D9FF" />
                 <stop offset="100%" stopColor="#FF6584" />
               </linearGradient>
+              <filter id="fcGlow" x="-20%" y="-20%" width="140%" height="140%">
+                <feGaussianBlur stdDeviation="2" result="b" />
+                <feMerge>
+                  <feMergeNode in="b" />
+                  <feMergeNode in="SourceGraphic" />
+                </feMerge>
+              </filter>
             </defs>
 
             <line
@@ -209,7 +337,7 @@ export default function SavingsForecast({
             />
             <text
               x={svg.W - 6}
-              y={svg.targetY - 4}
+              y={svg.targetY - 5}
               fill="rgba(255,255,255,0.55)"
               fontSize="10"
               textAnchor="end"
@@ -217,15 +345,18 @@ export default function SavingsForecast({
               Цель
             </text>
 
-            {svg.areaPath && <path d={svg.areaPath} fill="url(#fcArea)" />}
+            {svg.areaPath && (
+              <motion.path d={svg.areaPath} fill="url(#fcArea)" {...areaMotion} />
+            )}
 
             <motion.path
               d={svg.histPath}
               fill="none"
               stroke="url(#fcLine)"
-              strokeWidth="2.5"
+              strokeWidth="2.6"
               strokeLinecap="round"
               strokeLinejoin="round"
+              filter="url(#fcGlow)"
               {...lineMotion}
             />
 
@@ -240,24 +371,42 @@ export default function SavingsForecast({
                 {...projMotion}
               />
             )}
-          </svg>
+
+            {svg.etaPoint && !forecast.done && (
+              <motion.circle
+                cx={svg.etaPoint.x}
+                cy={svg.etaPoint.y}
+                r="5"
+                fill="#00D9FF"
+                stroke="#0a0a0f"
+                strokeWidth="2"
+                {...dotMotion}
+              />
+            )}
+          </motion.svg>
         ) : (
-          <div className="h-40 flex items-center justify-center gap-2 text-gray-500 text-sm border border-primary/10 rounded-2xl">
+          <div className="h-44 flex items-center justify-center gap-2 text-gray-500 text-sm border border-primary/10 rounded-2xl">
             <TrendingUp className="w-4 h-4 opacity-50" />
             Пополни копилку — и тут появится график
           </div>
         )}
 
         {svg && (
-          <div className="flex items-center justify-center gap-5 mt-2 text-xs text-gray-400">
+          <div className="flex flex-wrap items-center justify-center gap-x-5 gap-y-2 mt-3 text-xs text-gray-400">
             <span className="flex items-center gap-1.5">
               <span className="inline-block w-6 h-[3px] rounded-full bg-gradient-to-r from-primary via-accent to-secondary" />
               Накопления
             </span>
             <span className="flex items-center gap-1.5">
               <span className="inline-block w-6 h-[3px]" style={legendDashStyle} />
-              Прогноз
+              Прогноз по частоте
             </span>
+            {forecast.avgPerDay > 0 && (
+              <span className="flex items-center gap-1.5">
+                <Zap className="w-3 h-3 text-primary" />
+                ~{fmtNum(forecast.avgPerDay)} {symbol}/день
+              </span>
+            )}
           </div>
         )}
       </div>
@@ -265,10 +414,11 @@ export default function SavingsForecast({
   );
 }
 
-function Stat({ icon, label, value, sub, highlight }) {
+function Stat({ icon, label, value, sub, highlight, swapKey }) {
   return (
     <motion.div
       whileHover={hoverLift}
+      transition= duration: 0.2 
       className={`relative bg-dark-light/40 backdrop-blur-sm border rounded-2xl p-4 transition-colors ${
         highlight ? 'border-primary/40' : 'border-primary/10 hover:border-primary/30'
       }`}
@@ -277,14 +427,28 @@ function Stat({ icon, label, value, sub, highlight }) {
         {icon}
         <span>{label}</span>
       </div>
-      <div
-        className={`text-base md:text-lg font-display font-semibold ${
-          highlight ? 'text-gradient' : 'text-white'
-        }`}
-      >
-        {value}
-      </div>
-      {sub && <div className="text-xs text-gray-500 mt-0.5">{sub}</div>}
+      <AnimatePresence mode="wait">
+        <motion.div
+          key={swapKey || value}
+          {...valueSwap}
+          className={`text-base md:text-lg font-display font-semibold ${
+            highlight ? 'text-gradient' : 'text-white'
+          }`}
+        >
+          {value}
+        </motion.div>
+      </AnimatePresence>
+      {sub && (
+        <AnimatePresence mode="wait">
+          <motion.div
+            key={`sub-${swapKey || sub}`}
+            {...valueSwap}
+            className="text-xs text-gray-500 mt-0.5"
+          >
+            {sub}
+          </motion.div>
+        </AnimatePresence>
+      )}
     </motion.div>
   );
 }

@@ -44,7 +44,6 @@ export default function App() {
   }, []);
 
   const checkUser = async () => {
-    // Таймаут на случай зависания
     const timeout = setTimeout(() => {
       setLoading(false);
       setIsAuthModalOpen(true);
@@ -213,28 +212,34 @@ export default function App() {
           onOpenSettings={() => setIsSettingsOpen(true)}
         />
 
-        <main className="container mx-auto px-4 py-6 max-w-6xl">
-          <SavingsCard
-            currentAmount={currentAmount}
-            targetAmount={targetAmount}
-            percentage={percentage}
-            currency={currency}
-            onAddFunds={() => setIsModalOpen(true)}
-            onUpdateTarget={handleUpdateTarget}
-          />
+        <main className="container mx-auto px-4 py-6 max-w-7xl">
+          <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)] gap-5">
+            <div className="order-2 lg:order-1">
+              <TransactionHistory
+                transactions={transactions}
+                currency={currency}
+                onDelete={handleDeleteTransaction}
+              />
+            </div>
 
-          <SavingsForecast
-            transactions={transactions}
-            currentAmount={currentAmount}
-            targetAmount={targetAmount}
-            currency={currency}
-          />
+            <div className="order-1 lg:order-2 space-y-5">
+              <SavingsCard
+                currentAmount={currentAmount}
+                targetAmount={targetAmount}
+                percentage={percentage}
+                currency={currency}
+                onAddFunds={() => setIsModalOpen(true)}
+                onUpdateTarget={handleUpdateTarget}
+              />
 
-          <TransactionHistory
-            transactions={transactions}
-            currency={currency}
-            onDelete={handleDeleteTransaction}
-          />
+              <SavingsForecast
+                transactions={transactions}
+                currentAmount={currentAmount}
+                targetAmount={targetAmount}
+                currency={currency}
+              />
+            </div>
+          </div>
         </main>
       </div>
 
