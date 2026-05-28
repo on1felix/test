@@ -3,6 +3,7 @@ import AnimatedBackground from './components/AnimatedBackground';
 import Header from './components/Header';
 import SavingsCard from './components/SavingsCard';
 import SavingsForecast from './components/SavingsForecast';
+import SavingsStats from './components/SavingsStats';
 import AddFundsModal from './components/AddFundsModal';
 import TransactionHistory from './components/TransactionHistory';
 import AuthModal from './components/AuthModal';
@@ -214,11 +215,16 @@ export default function App() {
 
         <main className="container mx-auto px-4 py-6 max-w-7xl">
           <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)] gap-5">
-            <div className="order-2 lg:order-1">
+            <div className="order-2 lg:order-1 space-y-5">
               <TransactionHistory
                 transactions={transactions}
                 currency={currency}
                 onDelete={handleDeleteTransaction}
+              />
+
+              <SavingsStats
+                transactions={transactions}
+                currency={currency}
               />
             </div>
 
