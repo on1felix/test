@@ -442,12 +442,12 @@ function Stat({
         {icon}
         <span>{label}</span>
       </div>
-      <div
-        className={`text-base md:text-lg font-display font-semibold ${
-          highlight ? 'text-gradient' : 'text-white'
-        }`}
-      >
-        {useNumeric ? (
+      {useNumeric ? (
+        <div
+          className={`text-base md:text-lg font-display font-semibold ${
+            highlight ? 'text-gradient' : 'text-white'
+          }`}
+        >
           <CountUp
             end={numValue}
             duration={1.2}
@@ -455,18 +455,20 @@ function Stat({
             suffix={numSuffix || ''}
             decimals={numDecimals || 0}
           />
-        ) : (
-          <AnimatePresence mode="wait">
-            <motion.span
-              key={swapKey || textValue}
-              {...valueSwap}
-              className="inline-block"
-            >
-              {textValue}
-            </motion.span>
-          </AnimatePresence>
-        )}
-      </div>
+        </div>
+      ) : (
+        <AnimatePresence mode="wait">
+          <motion.div
+            key={swapKey || textValue}
+            {...valueSwap}
+            className={`text-base md:text-lg font-display font-semibold ${
+              highlight ? 'text-gradient' : 'text-white'
+            }`}
+          >
+            {textValue}
+          </motion.div>
+        </AnimatePresence>
+      )}
       {sub && (
         <AnimatePresence mode="wait">
           <motion.div
