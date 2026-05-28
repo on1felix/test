@@ -6,7 +6,7 @@ const currencySymbols = { RUB: '₽', USD: '$', EUR: '€', KGS: 'с' };
 
 const monthsRu = [
   'января', 'февраля', 'марта', 'апреля', 'мая', 'июня',
-  'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря'
+  'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря',
 ];
 
 function formatDateRu(d) {
@@ -20,6 +20,31 @@ function pluralDays(n) {
   if ([2, 3, 4].includes(m10) && ![12, 13, 14].includes(m100)) return 'дня';
   return 'дней';
 }
+
+const cardMotion = {
+  initial: { opacity: 0, y: 20 },
+  animate: { opacity: 1, y: 0 },
+  transition: { duration: 0.5, delay: 0.15 },
+};
+
+const lineMotion = {
+  initial: { pathLength: 0 },
+  animate: { pathLength: 1 },
+  transition: { duration: 1.2, ease: 'easeOut' },
+};
+
+const projMotion = {
+  initial: { opacity: 0 },
+  animate: { opacity: 1 },
+  transition: { duration: 0.8, delay: 0.6 },
+};
+
+const hoverLift = { y: -2 };
+
+const legendDashStyle = {
+  backgroundImage:
+    'repeating-linear-gradient(90deg, #00D9FF 0 4px, transparent 4px 8px)',
+};
 
 export default function SavingsForecast({
   transactions = [],
@@ -80,12 +105,13 @@ export default function SavingsForecast({
       hist.push({ x: Date.now(), y: currentAmount });
     }
 
-    const proj = eta && !done
-      ? [
-          { x: Date.now(), y: currentAmount },
-          { x: eta.getTime(), y: targetAmount },
-        ]
-      : [];
+    const proj =
+      eta && !done
+        ? [
+            { x: Date.now(), y: currentAmount },
+            { x: eta.getTime(), y: targetAmount },
+          ]
+        : [];
 
     const all = [...hist, ...proj];
     const minX = Math.min(...all.map((p) => p.x));
@@ -104,18 +130,17 @@ export default function SavingsForecast({
 
     const histPath = buildPath(hist);
     const projPath = proj.length ? buildPath(proj) : '';
-    const areaPath = hist.length > 1
-      ? `${histPath} L ${sx(hist[hist.length - 1].x).toFixed(1)} ${sy(0).toFixed(1)} L ${sx(hist[0].x).toFixed(1)} ${sy(0).toFixed(1)} Z`
-      : '';
+    const areaPath =
+      hist.length > 1
+        ? `${histPath} L ${sx(hist[hist.length - 1].x).toFixed(1)} ${sy(0).toFixed(1)} L ${sx(hist[0].x).toFixed(1)} ${sy(0).toFixed(1)} Z`
+        : '';
 
     return { W, H, histPath, projPath, areaPath, targetY: sy(targetAmount) };
   }, [transactions, currentAmount, targetAmount, eta, done]);
 
   return (
     <motion.div
-      initial= opacity: 0, y: 20 
-      animate= opacity: 1, y: 0 
-      transition= duration: 0.5, delay: 0.15 
+      {...cardMotion}
       className="relative overflow-hidden backdrop-blur-sm border-2 border-primary/20 rounded-3xl p-5 md:p-7 mb-5"
     >
       <div className="pointer-events-none absolute -top-32 -right-32 w-72 h-72 bg-accent/20 rounded-full blur-3xl" />
@@ -151,9 +176,11 @@ export default function SavingsForecast({
           icon={<Target className="w-4 h-4 text-success" />}
           label={done ? 'Поздравляю!' : 'Осталось накопить'}
           value={done ? '0' : daysLeft != null ? `${daysLeft} ${pluralDays(daysLeft)}` : '—'}
-          sub={!done && remaining > 0
-            ? `${remaining.toLocaleString('ru-RU', { maximumFractionDigits: 2 })} ${symbol}`
-            : null}
+          sub={
+            !done && remaining > 0
+              ? `${remaining.toLocaleString('ru-RU', { maximumFractionDigits: 2 })} ${symbol}`
+              : null
+          }
         />
       </div>
 
@@ -199,9 +226,7 @@ export default function SavingsForecast({
               strokeWidth="2.5"
               strokeLinecap="round"
               strokeLinejoin="round"
-              initial= pathLength: 0 
-              animate= pathLength: 1 
-              transition= duration: 1.2, ease: 'easeOut' 
+              {...lineMotion}
             />
 
             {svg.projPath && (
@@ -212,9 +237,7 @@ export default function SavingsForecast({
                 strokeWidth="2"
                 strokeDasharray="5 5"
                 strokeLinecap="round"
-                initial= opacity: 0 
-                animate= opacity: 1 
-                transition= duration: 0.8, delay: 0.6 
+                {...projMotion}
               />
             )}
           </svg>
@@ -232,10 +255,7 @@ export default function SavingsForecast({
               Накопления
             </span>
             <span className="flex items-center gap-1.5">
-              <span
-                className="inline-block w-6 h-[3px]"
-                style= backgroundImage: 'repeating-linear-gradient(90deg, #00D9FF 0 4px, transparent 4px 8px)' 
-              />
+              <span className="inline-block w-6 h-[3px]" style={legendDashStyle} />
               Прогноз
             </span>
           </div>
@@ -248,7 +268,7 @@ export default function SavingsForecast({
 function Stat({ icon, label, value, sub, highlight }) {
   return (
     <motion.div
-      whileHover= y: -2 
+      whileHover={hoverLift}
       className={`relative bg-dark-light/40 backdrop-blur-sm border rounded-2xl p-4 transition-colors ${
         highlight ? 'border-primary/40' : 'border-primary/10 hover:border-primary/30'
       }`}
