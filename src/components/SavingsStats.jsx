@@ -28,6 +28,9 @@ function startOfWeek(d) {
 
 const formatWeekLabel = (d) => `${d.getDate()} ${monthsShortRu[d.getMonth()]}`;
 
+const SVG_W = 600;
+const SVG_H = 130;
+
 // motion presets — вынесены, чтобы избежать двойных фигурных в JSX
 const cardMotion = {
   initial: { opacity: 0, y: 20 },
@@ -46,11 +49,11 @@ const chartFade = {
   transition: { duration: 0.3 },
 };
 
-function makeBarMotion(i) {
+function makeBarMotion(i, targetY, targetHeight) {
   return {
-    initial: { scaleY: 0, opacity: 0 },
-    animate: { scaleY: 1, opacity: 1 },
-    transition: { duration: 0.7, delay: 0.1 + i * 0.06, ease: [0.16, 1, 0.3, 1] },
+    initial: { y: SVG_H, height: 0 },
+    animate: { y: targetY, height: targetHeight },
+    transition: { duration: 0.8, delay: 0.1 + i * 0.07, ease: [0.16, 1, 0.3, 1] },
   };
 }
 
@@ -132,13 +135,34 @@ export default function SavingsStats({ transactions = [], currency = 'RUB' }) {
   const monthDelta = stats.thisMonth - stats.prevMonth;
   const chartKey = `${transactions.length}-${stats.total}-${stats.thisMonth}`;
 
-  // Предвычисленные inline-стили высот баров (избегаем двойных фигурных в JSX)
-  const barHeightStyles = useMemo(() => {
+  // SVG-бары: предвычисляем геометрию
+  const bars = useMemo(() => {
     if (!stats.weeks.length || stats.maxWeek <= 0) return [];
-    return stats.weeks.map((w) => ({
-      height: `${Math.max(2, (w.amount / stats.maxWeek) * 100)}%`,
-    }));
+    const slotW = SVG_W / stats.weeks.length;
+    const barWidth = slotW * 0.62;
+    return stats.weeks.map((w, i) => {
+      const rawH = (w.amount / stats.maxWeek) * (SVG_H - 6);
+      const barHeight = w.amount > 0 ? Math.max(6, rawH) : 4;
+      const barY = SVG_H - barHeight;
+      const barX = i * slotW + (slotW - barWidth) / 2;
+      return {
+        x: barX,
+        y: barY,
+        width: barWidth,
+        height: barHeight,
+        amount: w.amount,
+        isActive: w.amount > 0,
+      };
+    });
   }, [stats.weeks, stats.maxWeek]);
+
+  // Сетка для дат под графиком
+  const dateGridStyle = useMemo(
+    () => ({
+      gridTemplateColumns: `repeat(${stats.weeks.length || 8}, minmax(0, 1fr))`,
+    }),
+    [stats.weeks.length],
+  );
 
   return (
     <motion.div
@@ -202,33 +226,58 @@ export default function SavingsStats({ transactions = [], currency = 'RUB' }) {
           )}
         </div>
 
-        {stats.weeks.length > 0 && stats.maxWeek > 0 ? (
-          <motion.div key={chartKey} {...chartFade} className="flex items-end gap-1.5 h-32">
-            {stats.weeks.map((w, i) => {
-              const isActive = w.amount > 0;
-              return (
-                <div key={i} className="flex-1 flex flex-col items-stretch gap-1 min-w-0">
-                  <div className="relative w-full flex-1 flex items-end overflow-hidden">
-                    <motion.div
-                      {...makeBarMotion(i)}
-                      style={barHeightStyles[i]}
-                      title={`${formatWeekLabel(w.start)}: ${fmtNum2(w.amount)} ${symbol}`}
-                      className={`w-full rounded-t-md origin-bottom ${
-                        isActive
-                          ? 'bg-gradient-to-t from-primary via-accent to-secondary shadow-[0_0_14px_rgba(108,99,255,0.45)]'
-                          : 'bg-primary/10'
-                      }`}
-                    />
-                  </div>
-                  <span className="text-[10px] text-gray-500 truncate w-full text-center">
-                    {formatWeekLabel(w.start)}
-                  </span>
-                </div>
-              );
-            })}
-          </motion.div>
+        {bars.length > 0 ? (
+          <>
+            <motion.svg
+              key={chartKey}
+              viewBox={`0 0 ${SVG_W} ${SVG_H}`}
+              className="w-full h-28"
+              preserveAspectRatio="none"
+              {...chartFade}
+            >
+              <defs>
+                <linearGradient id="barGrad" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor="#FF6584" />
+                  <stop offset="50%" stopColor="#00D9FF" />
+                  <stop offset="100%" stopColor="#6C63FF" />
+                </linearGradient>
+                <filter id="barGlow" x="-20%" y="-20%" width="140%" height="140%">
+                  <feGaussianBlur stdDeviation="2" result="b" />
+                  <feMerge>
+                    <feMergeNode in="b" />
+                    <feMergeNode in="SourceGraphic" />
+                  </feMerge>
+                </filter>
+              </defs>
+
+              {bars.map((b, i) => (
+                <motion.rect
+                  key={`bar-${i}`}
+                  x={b.x}
+                  width={b.width}
+                  rx="4"
+                  fill={b.isActive ? 'url(#barGrad)' : 'rgba(108,99,255,0.12)'}
+                  filter={b.isActive ? 'url(#barGlow)' : undefined}
+                  {...makeBarMotion(i, b.y, b.height)}
+                >
+                  <title>{`${formatWeekLabel(stats.weeks[i].start)}: ${fmtNum2(b.amount)} ${symbol}`}</title>
+                </motion.rect>
+              ))}
+            </motion.svg>
+
+            <div className="grid mt-1.5" style={dateGridStyle}>
+              {stats.weeks.map((w, i) => (
+                <span
+                  key={`lbl-${i}`}
+                  className="text-[10px] text-gray-500 text-center truncate"
+                >
+                  {formatWeekLabel(w.start)}
+                </span>
+              ))}
+            </div>
+          </>
         ) : (
-          <div className="h-32 flex items-center justify-center text-gray-500 text-sm border border-primary/10 rounded-2xl">
+          <div className="h-28 flex items-center justify-center text-gray-500 text-sm border border-primary/10 rounded-2xl">
             Пополни копилку — появится график по неделям
           </div>
         )}
