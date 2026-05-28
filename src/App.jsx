@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import AnimatedBackground from './components/AnimatedBackground';
 import Header from './components/Header';
 import SavingsCard from './components/SavingsCard';
+import SavingsForecast from './components/SavingsForecast';
 import AddFundsModal from './components/AddFundsModal';
 import TransactionHistory from './components/TransactionHistory';
 import AuthModal from './components/AuthModal';
@@ -220,6 +221,13 @@ export default function App() {
             currency={currency}
             onAddFunds={() => setIsModalOpen(true)}
             onUpdateTarget={handleUpdateTarget}
+          />
+
+          <SavingsForecast
+            transactions={transactions}
+            currentAmount={currentAmount}
+            targetAmount={targetAmount}
+            currency={currency}
           />
 
           <TransactionHistory
